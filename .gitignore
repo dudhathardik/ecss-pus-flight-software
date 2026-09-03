@@ -1,0 +1,10 @@
+build/
+.venv/
+*.o
+*.gcno
+*.gcda
+*.gcov
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store

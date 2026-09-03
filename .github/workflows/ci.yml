@@ -1,0 +1,61 @@
+name: verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: build, test and check the traceability matrix
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r tests/integration/requirements.txt
+
+      - name: Build the flight sources and the host runner
+        run: make
+
+      - name: Unit tests
+        run: make test
+
+      - name: Static analysis
+        run: make static
+
+      - name: Statement coverage
+        run: make coverage
+
+      - name: Requirements traceability
+        run: make trace
+
+      - name: Functional tests
+        run: make integration
+
+      - name: Publish the traceability matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traceability-matrix
+          path: docs/traceability.md
+
+  warnings-are-errors:
+    name: build with a second compiler
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run the unit tests with ${{ matrix.cc }}
+        run: make test CC=${{ matrix.cc }}
