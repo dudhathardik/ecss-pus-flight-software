@@ -1,5 +1,10 @@
 # OBSW-PUS — an ECSS-compliant PUS service handler, and the evidence that it works
 
+[![verification](https://github.com/dudhathardik/ecss-pus-flight-software/actions/workflows/ci.yml/badge.svg)](https://github.com/dudhathardik/ecss-pus-flight-software/actions/workflows/ci.yml)
+[![standard](https://img.shields.io/badge/standard-ECSS--E--ST--40C%20%7C%20ECSS--Q--ST--80C-blue)](docs/SRS.md)
+[![coverage](https://img.shields.io/badge/statement%20coverage-99.5%25-brightgreen)](docs/SVP.md)
+[![licence](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
+
 A spacecraft on-board software core in C99 that terminates a CCSDS/PUS
 telecommand link, produces the telemetry downlink, and runs one autonomous
 control function — plus the verification apparatus a space project would
