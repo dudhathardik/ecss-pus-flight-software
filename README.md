@@ -1,23 +1,23 @@
-# OBSW-PUS — an ECSS-compliant PUS service handler, and the evidence that it works
+# OBSW-PUS — a CCSDS/PUS service handler in C99
 
 [![verification](https://github.com/dudhathardik/ecss-pus-flight-software/actions/workflows/ci.yml/badge.svg)](https://github.com/dudhathardik/ecss-pus-flight-software/actions/workflows/ci.yml)
 [![standard](https://img.shields.io/badge/standard-ECSS--E--ST--40C%20%7C%20ECSS--Q--ST--80C-blue)](docs/SRS.md)
 [![coverage](https://img.shields.io/badge/statement%20coverage-99.5%25-brightgreen)](docs/SVP.md)
 [![licence](https://img.shields.io/badge/licence-MIT-lightgrey)](LICENSE)
 
-A spacecraft on-board software core in C99 that terminates a CCSDS/PUS
-telecommand link, produces the telemetry downlink, and runs one autonomous
-control function — plus the verification apparatus a space project would
-expect around it: a requirements baseline, unit and functional test suites,
-statement coverage, static analysis, and a traceability matrix that is
-generated from the code and fails the build when it develops a hole.
+An on-board software core in C99 that terminates a CCSDS/PUS telecommand
+link, produces the telemetry downlink, and runs one autonomous control
+function, together with the verification material that ECSS-E-ST-40C and
+ECSS-E-ST-70-41C ask for around it: a requirements baseline, unit and
+functional test suites, statement coverage, static analysis, and a
+traceability matrix generated from the sources.
 
-The software is small on purpose. The point of the repository is not the
-protocol stack; it is what surrounds it.
+Scope and what is not covered is listed under
+[Limits of this project](#limits-of-this-project).
 
 | | |
 |---|---|
-| Flight code | ~1 700 lines of C99, no dynamic memory, no libc beyond `<stdint.h>` and `<stddef.h>` |
+| Flight code | C99, no dynamic memory, no floating point |
 | Requirements | 69, each traced to code and to a test |
 | Unit tests | 98 cases in 12 files |
 | Functional tests | 43 cases driving the software over a TC/TM socket |
@@ -43,7 +43,7 @@ python3 -m venv .venv && .venv/bin/pip install -r tests/integration/requirements
 PYTHON=.venv/bin/python make integration
 ```
 
-And `make verify` runs everything the CI job runs, in the same order.
+`make verify` runs everything the CI job runs, in the same order.
 
 To talk to the software by hand:
 
@@ -58,7 +58,7 @@ It listens on a TCP socket that carries raw CCSDS packets in both directions;
 
 ## What it does
 
-The on-board software implements six PUS services and one control law.
+Six PUS services and one control law.
 
 ```mermaid
 flowchart LR
@@ -104,15 +104,17 @@ flowchart LR
 
 The control law is a survival heater with hysteresis: on at or below 5 °C,
 off at or above 25 °C, and an over-temperature alarm at 40 °C that reports a
-high-severity event and drops the unit into SAFE mode. It exists so that the
-test suite has behaviour to verify — thresholds, hysteresis, a latch, and a
-mode transition — rather than only packet round-trips.
+high-severity event and drops the unit into SAFE mode. It gives the test
+suite behaviour to verify — thresholds, hysteresis, a latch and a mode
+transition — beyond packet round-trips. Temperatures are held as integer
+decidegrees, because the coding standard forbids floating point in the
+flight sources.
 
 ---
 
-## The part that is actually about the job
+## How it is verified
 
-### Requirements that cannot silently rot
+### Traceability generated from the sources
 
 Every requirement in [docs/SRS.md](docs/SRS.md) looks like this:
 
@@ -133,7 +135,7 @@ The code that implements it says so:
 static void obc_thermal_control(void)
 ```
 
-and the tests that verify it say so:
+and the test that verifies it says so:
 
 ```c
 /** @verifies SWREQ-APP-070 */
@@ -144,27 +146,28 @@ static void test_over_temperature_forces_safe_mode_and_a_high_severity_event(voi
 [docs/traceability.md](docs/traceability.md). Run with `--check`, as CI does,
 it exits non-zero if a requirement has no implementation, if a requirement
 whose verification method is *Test* has no test case, or if a tag names a
-requirement that no longer exists. A matrix maintained by hand drifts within
-a sprint; this one cannot drift without breaking the build.
+requirement that no longer exists. A matrix kept by hand goes stale without
+anything noticing; this one cannot go stale without failing the build.
 
-### Two levels of test, on purpose
+### Two levels of test
 
 **Unit tests** link the module under test against the real modules below it
 and drive it through its C API. They use
-[`tests/framework/minunity.h`](tests/framework/minunity.h), a 150-line
-assertion core with Unity's macro names and semantics, so that the repository
-has no external dependency while the test bodies stay portable to
-ThrowTheSwitch/Unity under Ceedling on the target.
+[`tests/framework/minunity.h`](tests/framework/minunity.h), a small assertion
+core with Unity's macro names and semantics, so the repository has no
+external dependency while the test bodies stay close to what
+ThrowTheSwitch/Unity expects.
 
 **Functional tests** launch the software as a separate process and reach it
-only through the telecommand link, using an independently written ground
-segment in Python. That independence is the point: the packet encoder in
+only through the telecommand link, using a ground segment written in Python.
+The two sides are independent on purpose: the packet encoder in
 `tests/integration/gsw/packets.py` was written from
-[docs/ICD.md](docs/ICD.md), not from the flight source, so a misreading of the
-standard that is symmetric between the on-board encoder and decoder still
-gets caught.
+[docs/ICD.md](docs/ICD.md) rather than from the flight source, so a
+misreading of the standard that is symmetric between the on-board encoder and
+decoder is still caught.
 
-Test design is by technique, not by inspiration:
+Test cases are selected by technique rather than by guessing at what might
+break:
 
 | Technique | Where |
 |---|---|
@@ -180,19 +183,18 @@ Test design is by technique, not by inspiration:
 On-board time is derived from the minor cycle counter rather than the wall
 clock, so a given command sequence produces identical time stamps on every
 run. The unit suite contains no `sleep`, and the functional suite waits on
-telemetry rather than on the clock. The host runner accepts `--tick-ms` so the
-functional suite runs the software ten times faster than flight without the
-software knowing.
+telemetry rather than on the clock. The host runner accepts `--tick-ms`, so
+the functional suite can run the software faster than its nominal rate
+without the software knowing.
 
-### Things that were deleted rather than explained
+### What the coverage report found
 
-Two findings came out of the coverage report and were fixed by removing code,
-not by adding a test: an unused HAL accessor, and a service 1 entry point that
-no path could reach because acceptance failures are reported from the raw
-octets. A third was a length check that the preceding checks made provably
-redundant. The three statements still uncovered are listed in
-[docs/SVP.md](docs/SVP.md) section 5 with the reason each cannot be reached —
-listed rather than excluded from the metric.
+Three gaps were closed by deleting code rather than by adding a test: an
+unused HAL accessor, a service 1 entry point that no path could reach
+(acceptance failures are reported from the raw octets), and a length check
+that the preceding checks already made redundant. The three statements still
+uncovered are listed in [docs/SVP.md](docs/SVP.md) section 5 with the reason
+each one cannot be reached — listed rather than excluded from the metric.
 
 ---
 
@@ -201,11 +203,11 @@ listed rather than excluded from the metric.
 ```
 include/pus/     public headers, one per module
 src/             flight sources - no dynamic memory, no floating point
-sim/             host runner: the TC/TM socket, standing in for the SpaceWire driver
+sim/             host runner: the TC/TM socket, standing in for a real link driver
 tests/framework/ Unity-compatible assertion core and shared test helpers
 tests/unit/      98 unit test cases
 tests/integration/
-    gsw/         independent ground segment: packet codec, link, mission database
+    gsw/         ground segment: packet codec, link, mission database
     test_*.py    43 functional cases
 tools/           traceability matrix generator, coverage reporting
 docs/            SRS, ICD, verification plan, coding standard, generated matrix
@@ -221,18 +223,18 @@ docs/            SRS, ICD, verification plan, coding standard, generated matrix
 
 ---
 
-## Design decisions worth arguing about
+## Design decisions
 
 **The acceptance checks run in a fixed order, and the CRC comes early.**
 Nothing in a telecommand is interpreted before the packet error control field
 verifies, so a bit flip on the link is reported as a CRC failure rather than
-as a mis-addressed packet. `SWREQ-TC-015` states the order, and a test case
-sends a packet that is both corrupted and mis-addressed to prove which one
-wins.
+as a mis-addressed packet. `SWREQ-TC-015` states the order, and one test
+sends a packet that is both corrupted and mis-addressed to pin down which
+check wins.
 
 **The downlink queue drops the newest packet on overflow, not the oldest.**
-The packets already queued describe the onset of the anomaly; those are the
-ones the ground segment needs. The queue cannot report its own overflow — the
+The packets already queued describe the onset of an anomaly, and those are
+the ones the ground needs. The queue cannot report its own overflow — that
 report would be the next thing dropped — so the application samples the
 counter once per minor cycle and reports it when there is room again.
 
@@ -241,31 +243,35 @@ identifiers validate the whole list before applying the first element, so a
 partially applied command is not a state the ground has to reason about.
 
 **One owner for the heater line.** The state published in housekeeping, the
-hardware line and the event report are written in one function, so they cannot
-disagree, whether the change came from ground or from the control law. That
-was a real bug in an earlier revision, caught by a functional test that
-compared housekeeping against what it had just commanded.
+hardware line and the event report are written in one function, so they
+cannot disagree. An earlier revision of this code set them in two places; a
+functional test comparing housekeeping against the state it had just
+commanded caught the disagreement.
 
-**A documented deviation beats silent non-compliance.** The message type
-counter is kept per service type rather than per (APID, type, subtype), which
-costs 512 bytes instead of 128 KiB. It is written down as deviation D-01 in
-the SRS, the ICD and the source.
+**A deviation written down beats a silent one.** The message type counter is
+kept per service type rather than per (APID, type, subtype), which costs
+512 bytes instead of 128 KiB. It is recorded as deviation D-01 in the SRS,
+the ICD and the source.
 
 ---
 
-## Porting to a target
+## Limits of this project
 
 The application core touches the platform only through
 [`include/pus/hal.h`](include/pus/hal.h): time, thermistor, heater line.
-`src/hal_host.c` is the host implementation; a LEON3/GR712 build replaces that
-one file with a BSP implementation over the RTEMS clock driver and the
-relevant GPIO, and `sim/obc_sim.c` with the SpaceWire or UART receive path.
-Nothing above the HAL changes, and the unit suite runs unmodified on the
-target under Ceedling.
+`src/hal_host.c` is the host implementation, and `sim/obc_sim.c` provides the
+socket that stands in for a real receive path. The platform-dependent part is
+confined to those files by design, but the software has not been run on any
+target, so that is an intention rather than a demonstrated result.
 
-Not in scope here, and named so the boundary is deliberate: worst case
-execution time and stack analysis, memory partitioning evidence, services 6,
-11, 15 and 23, redundancy management, and target hardware campaigns.
+Not covered here, listed so the boundary is explicit rather than accidental:
+
+- no worst-case execution time or stack usage analysis
+- no memory partitioning or separation evidence
+- services 6, 11, 15 and 23 are not implemented
+- no redundancy management or FDIR beyond the single SAFE mode transition
+- no run on target hardware, no board support package, no RTOS integration
+- no independent review
 
 ## Licence
 
